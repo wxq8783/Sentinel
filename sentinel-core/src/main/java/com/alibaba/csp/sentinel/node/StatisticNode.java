@@ -15,15 +15,16 @@
  */
 package com.alibaba.csp.sentinel.node;
 
+import com.alibaba.csp.sentinel.node.metric.MetricNode;
+import com.alibaba.csp.sentinel.slots.statistic.base.LongAdder;
+import com.alibaba.csp.sentinel.slots.statistic.metric.ArrayMetric;
+import com.alibaba.csp.sentinel.slots.statistic.metric.Metric;
+import com.alibaba.csp.sentinel.util.TimeUtil;
+import com.alibaba.csp.sentinel.util.function.Predicate;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import com.alibaba.csp.sentinel.util.TimeUtil;
-import com.alibaba.csp.sentinel.node.metric.MetricNode;
-import com.alibaba.csp.sentinel.slots.statistic.metric.ArrayMetric;
-import com.alibaba.csp.sentinel.slots.statistic.metric.Metric;
 
 /**
  * <p>The statistic node keep three kinds of real-time statistics metrics:</p>
@@ -104,7 +105,7 @@ public class StatisticNode implements Node {
     /**
      * The counter for thread count.
      */
-    private AtomicInteger curThreadNum = new AtomicInteger(0);
+    private LongAdder curThreadNum = new LongAdder();
 
     /**
      * The last timestamp when metrics were fetched.
@@ -131,6 +132,11 @@ public class StatisticNode implements Node {
         return metrics;
     }
 
+    @Override
+    public List<MetricNode> rawMetricsInMin(Predicate<Long> timePredicate) {
+        return rollingCounterInMinute.detailsOnCondition(timePredicate);
+    }
+
     private boolean isNodeInTime(MetricNode node, long currentTime) {
         return node.getTimestamp() > lastFetchTime && node.getTimestamp() < currentTime;
     }
@@ -147,8 +153,7 @@ public class StatisticNode implements Node {
 
     @Override
     public long totalRequest() {
-        long totalRequest = rollingCounterInMinute.pass() + rollingCounterInMinute.block();
-        return totalRequest;
+        return rollingCounterInMinute.pass() + rollingCounterInMinute.block();
     }
 
     @Override
@@ -208,7 +213,8 @@ public class StatisticNode implements Node {
 
     @Override
     public double maxSuccessQps() {
-        return rollingCounterInSecond.maxSuccess() * rollingCounterInSecond.getSampleCount();
+        return (double) rollingCounterInSecond.maxSuccess() * rollingCounterInSecond.getSampleCount()
+                / rollingCounterInSecond.getWindowIntervalInSec();
     }
 
     @Override
@@ -233,7 +239,7 @@ public class StatisticNode implements Node {
 
     @Override
     public int curThreadNum() {
-        return curThreadNum.get();
+        return (int)curThreadNum.sum();
     }
 
     @Override
@@ -265,12 +271,12 @@ public class StatisticNode implements Node {
 
     @Override
     public void increaseThreadNum() {
-        curThreadNum.incrementAndGet();
+        curThreadNum.increment();
     }
 
     @Override
     public void decreaseThreadNum() {
-        curThreadNum.decrementAndGet();
+        curThreadNum.decrement();
     }
 
     @Override
